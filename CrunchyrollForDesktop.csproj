@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>images\icon.ico</ApplicationIcon>
+    <AssemblyTitle>Crunchyroll For Desktop</AssemblyTitle>
+    <Product>Crunchyroll For Desktop</Product>
+    <Company>Zyhloh</Company>
+    <Copyright>© 2024 Zyhloh</Copyright>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3405.78" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+  </ItemGroup>
+
+  <!-- Embedded resources (fonts, etc.) - only include if present -->
+  <ItemGroup Condition="Exists('assets\\fonts\\Inter.ttf')">
+    <Resource Include="assets\fonts\Inter.ttf" />
+  </ItemGroup>
+
+  <!-- Include any fonts added under /font/** as resources -->
+  <ItemGroup Condition="Exists('font')">
+    <Resource Include="font\**\*.ttf" />
+    <Resource Include="font\**\*.otf" />
+  </ItemGroup>
+
+  <!-- Include images as resources -->
+  <ItemGroup>
+    <Resource Include="images\icon.ico" />
+    <Resource Include="images\nobgicon.png" />
+  </ItemGroup>
+
+</Project>
