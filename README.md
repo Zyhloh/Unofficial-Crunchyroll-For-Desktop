@@ -13,13 +13,12 @@ An unofficial desktop application for Crunchyroll with Discord Rich Presence int
 - **Hardware Acceleration** - Smooth video playback with GPU acceleration
 - **DRM Support** - Full Widevine DRM support for premium content
 - **Optimized for Streaming** - 1400x900 window optimized for anime viewing
-- **Secure** - Permissive CSP for Crunchyroll while blocking other external sites
 
 ## 🚀 Quick Start
 
 ### Option 1: Download Pre-built Installer (Recommended)
 1. Go to [Releases](https://github.com/zyhloh/unofficial-crunchyroll-for-desktop/releases)
-2. Download `CrunchyrollForDesktopSetup-v1.0.0.exe`
+2. Download `Crunchyroll For Desktop V2.0.0.exe`
 3. Run the installer
 4. Launch from Start Menu or Desktop shortcut
 

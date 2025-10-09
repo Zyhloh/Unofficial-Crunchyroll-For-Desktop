@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -8,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
@@ -17,6 +19,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 using DiscordRPC;
 using DiscordRPC.Logging;
+using System.Windows.Shell;
 
 namespace CrunchyrollForDesktop;
 
@@ -33,6 +36,10 @@ public partial class MainWindow : Window
     private const string REGISTRY_KEY = @"SOFTWARE\CrunchyrollForDesktop";
     private const string HARDWARE_ACCEL_VALUE = "HardwareAcceleration";
     
+    // Default window size
+    private const double DEFAULT_WIDTH = 1400;
+    private const double DEFAULT_HEIGHT = 900;
+    
     // Discord RPC
     private DiscordRpcClient? _discordClient;
     private const string DISCORD_APP_ID = "1412040406597636146";
@@ -46,6 +53,86 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         StateChanged += MainWindow_StateChanged;
         Closing += MainWindow_Closing;
+        SourceInitialized += MainWindow_SourceInitialized;
+    }
+    
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
+        
+        // Enable DWM transitions for smooth animations
+        EnableDwmTransitions(handle);
+    }
+    
+    private void EnableDwmTransitions(IntPtr hwnd)
+    {
+        try
+        {
+            // Enable DWM transitions (0 = enabled, 1 = disabled)
+            int value = 0;
+            DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref value, sizeof(int));
+            
+            // Set window corner preference for Windows 11
+            int preference = (int)DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND;
+            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
+        }
+        catch { }
+    }
+    
+    private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_GETMINMAXINFO = 0x0024;
+        
+        if (msg == WM_GETMINMAXINFO)
+        {
+            MINMAXINFO mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+            
+            // Get the screen the window is on
+            var screen = Screen.FromHandle(hwnd);
+            var workArea = screen.WorkingArea;
+            
+            // Set max size to working area (screen minus taskbar)
+            mmi.ptMaxSize.X = workArea.Width;
+            mmi.ptMaxSize.Y = workArea.Height;
+            mmi.ptMaxPosition.X = workArea.Left;
+            mmi.ptMaxPosition.Y = workArea.Top;
+            
+            Marshal.StructureToPtr(mmi, lParam, false);
+        }
+        
+        return IntPtr.Zero;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+    
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+    
+    private const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    
+    private enum DWM_WINDOW_CORNER_PREFERENCE
+    {
+        DWMWCP_DEFAULT = 0,
+        DWMWCP_DONOTROUND = 1,
+        DWMWCP_ROUND = 2,
+        DWMWCP_ROUNDSMALL = 3
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -105,23 +192,43 @@ public partial class MainWindow : Window
                     {
                         // Exit fullscreen: restore everything
                         this.Topmost = false;
-                        this.WindowStyle = _previousWindowStyle;
-                        this.ResizeMode = _previousResizeMode;
                         
-                        // Restore window bounds
-                        this.Left = _previousBounds.Left;
-                        this.Top = _previousBounds.Top;
-                        this.Width = _previousBounds.Width;
-                        this.Height = _previousBounds.Height;
-                        this.WindowState = _previousWindowState;
-                        
-                        // Restore title bar
+                        // Restore title bar first
                         TitleBarRow.Height = new GridLength(42);
                         if (TitleBarContainer != null)
                             TitleBarContainer.Visibility = Visibility.Visible;
                         
-                        // Force restore windowed layout instead of maximized layout
-                        RestoreWindowedLayout();
+                        // Restore window style and resize mode
+                        this.WindowStyle = _previousWindowStyle;
+                        this.ResizeMode = _previousResizeMode;
+                        
+                        // Restore window state properly
+                        if (_previousWindowState == WindowState.Maximized)
+                        {
+                            // If was maximized, just restore to maximized state
+                            // WPF will handle the sizing automatically
+                            this.WindowState = WindowState.Maximized;
+                        }
+                        else
+                        {
+                            // Restore to default size and position
+                            this.WindowState = WindowState.Normal;
+                            
+                            // Use Dispatcher to ensure state change completes before setting bounds
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                this.Width = DEFAULT_WIDTH;
+                                this.Height = DEFAULT_HEIGHT;
+                                
+                                // Center on screen
+                                var screen = System.Windows.Forms.Screen.FromHandle(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+                                this.Left = screen.WorkingArea.Left + (screen.WorkingArea.Width - DEFAULT_WIDTH) / 2;
+                                this.Top = screen.WorkingArea.Top + (screen.WorkingArea.Height - DEFAULT_HEIGHT) / 2;
+                            }), System.Windows.Threading.DispatcherPriority.Loaded);
+                        }
+                        
+                        // Apply the correct layout based on restored state
+                        ApplyMaximizedLayout();
                     }
                 });
             };
@@ -241,7 +348,22 @@ public partial class MainWindow : Window
 
     private void MaxButton_Click(object sender, RoutedEventArgs e)
     {
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        if (WindowState == WindowState.Maximized)
+        {
+            // Restore to default size
+            WindowState = WindowState.Normal;
+            Width = DEFAULT_WIDTH;
+            Height = DEFAULT_HEIGHT;
+            
+            // Center the window on screen
+            var screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
+            Left = screen.WorkingArea.Left + (screen.WorkingArea.Width - DEFAULT_WIDTH) / 2;
+            Top = screen.WorkingArea.Top + (screen.WorkingArea.Height - DEFAULT_HEIGHT) / 2;
+        }
+        else
+        {
+            WindowState = WindowState.Maximized;
+        }
     }
 
     private void HardwareAccelToggle_Click(object sender, RoutedEventArgs e)
@@ -257,6 +379,19 @@ public partial class MainWindow : Window
         Close();
     }
 
+    private void GitHubButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://github.com/zyhloh/unofficial-crunchyroll-for-desktop",
+                UseShellExecute = true
+            });
+        }
+        catch { }
+    }
+
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState == MouseButtonState.Pressed)
@@ -264,10 +399,12 @@ public partial class MainWindow : Window
             if (e.ClickCount == 2)
             {
                 // Double-click to maximize/restore
+                e.Handled = true;
                 WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
             }
-            else
+            else if (e.ClickCount == 1)
             {
+                // Only handle single click for dragging
                 if (WindowState == WindowState.Maximized)
                 {
                     // Store mouse position before changing window state
@@ -318,121 +455,28 @@ public partial class MainWindow : Window
         {
             // Remove rounded corners when maximized
             if (FindName("MainBorder") is Border mainBorder)
+            {
                 mainBorder.CornerRadius = new CornerRadius(0);
+            }
             if (TitleBarContainer != null)
+            {
                 TitleBarContainer.CornerRadius = new CornerRadius(0);
-            
-            // Adjust positioning for maximized state
-            if (FindName("WindowButtonsPanel") is StackPanel buttonsPanel)
-                buttonsPanel.Margin = new Thickness(0, 5, 8, 0); // Half of previous adjustment
-            if (FindName("TitleText") is TextBlock titleText && titleText.Parent is StackPanel titlePanel)
-                titlePanel.Margin = new Thickness(16, 5, 0, 0);
-            if (FindName("HardwareAccelToggle") is System.Windows.Controls.Button toggleButton)
-            {
-                toggleButton.Margin = new Thickness(2, 5, 7, 5); // Align vertically with other buttons
-                // Reduce button size by 15% in maximized mode
-                toggleButton.Width = 24; // 85% of 28
-                toggleButton.Height = 24;
-                toggleButton.FontSize = 18; // 85% of 21
-            }
-            // Also reduce size of other window control buttons in maximized mode
-            if (FindName("MinButton") is System.Windows.Controls.Button minBtn)
-            {
-                minBtn.Width = 24;
-                minBtn.Height = 24;
-            }
-            if (FindName("MaxButton") is System.Windows.Controls.Button maxBtn)
-            {
-                maxBtn.Width = 24;
-                maxBtn.Height = 24;
-            }
-            if (FindName("CloseButton") is System.Windows.Controls.Button closeBtn)
-            {
-                closeBtn.Width = 24;
-                closeBtn.Height = 24;
             }
         }
         else
         {
-            // Restore rounded corners when not maximized
+            // Restore rounded corners for windowed state
             if (FindName("MainBorder") is Border mainBorder)
+            {
                 mainBorder.CornerRadius = new CornerRadius(12);
+            }
             if (TitleBarContainer != null)
+            {
                 TitleBarContainer.CornerRadius = new CornerRadius(12, 12, 0, 0);
-            
-            // Restore normal positioning for windowed state
-            if (FindName("WindowButtonsPanel") is StackPanel buttonsPanel)
-                buttonsPanel.Margin = new Thickness(0, 0, 8, 0);
-            if (FindName("TitleText") is TextBlock titleText && titleText.Parent is StackPanel titlePanel)
-                titlePanel.Margin = new Thickness(16, 0, 0, 0);
-            if (FindName("HardwareAccelToggle") is System.Windows.Controls.Button toggleButton)
-            {
-                toggleButton.Margin = new Thickness(2, 0, 8, 0); // Align with other buttons (0 top/bottom margin)
-                // Restore normal button size
-                toggleButton.Width = 28;
-                toggleButton.Height = 28;
-                toggleButton.FontSize = 21;
-            }
-            // Restore normal size for other window control buttons
-            if (FindName("MinButton") is System.Windows.Controls.Button minBtn)
-            {
-                minBtn.Width = 28;
-                minBtn.Height = 28;
-            }
-            if (FindName("MaxButton") is System.Windows.Controls.Button maxBtn)
-            {
-                maxBtn.Width = 28;
-                maxBtn.Height = 28;
-            }
-            if (FindName("CloseButton") is System.Windows.Controls.Button closeBtn)
-            {
-                closeBtn.Width = 28;
-                closeBtn.Height = 28;
             }
         }
     }
     
-    private void RestoreWindowedLayout()
-    {
-        // Restore rounded corners
-        if (FindName("MainBorder") is Border mainBorder)
-            mainBorder.CornerRadius = new CornerRadius(12);
-        if (TitleBarContainer != null)
-            TitleBarContainer.CornerRadius = new CornerRadius(12, 12, 0, 0);
-        
-        // Clear any explicit sizing and margins to let XAML defaults take over
-        if (FindName("WindowButtonsPanel") is StackPanel buttonsPanel)
-        {
-            buttonsPanel.ClearValue(StackPanel.MarginProperty);
-        }
-        if (FindName("TitleText") is TextBlock titleText && titleText.Parent is StackPanel titlePanel)
-        {
-            titlePanel.ClearValue(StackPanel.MarginProperty);
-        }
-        if (FindName("HardwareAccelToggle") is System.Windows.Controls.Button toggleButton)
-        {
-            toggleButton.ClearValue(System.Windows.Controls.Button.MarginProperty);
-            toggleButton.ClearValue(System.Windows.Controls.Button.WidthProperty);
-            toggleButton.ClearValue(System.Windows.Controls.Button.HeightProperty);
-            toggleButton.FontSize = 21; // Keep large icon
-        }
-        // Clear explicit sizing for other window control buttons
-        if (FindName("MinButton") is System.Windows.Controls.Button minBtn)
-        {
-            minBtn.ClearValue(System.Windows.Controls.Button.WidthProperty);
-            minBtn.ClearValue(System.Windows.Controls.Button.HeightProperty);
-        }
-        if (FindName("MaxButton") is System.Windows.Controls.Button maxBtn)
-        {
-            maxBtn.ClearValue(System.Windows.Controls.Button.WidthProperty);
-            maxBtn.ClearValue(System.Windows.Controls.Button.HeightProperty);
-        }
-        if (FindName("CloseButton") is System.Windows.Controls.Button closeBtn)
-        {
-            closeBtn.ClearValue(System.Windows.Controls.Button.WidthProperty);
-            closeBtn.ClearValue(System.Windows.Controls.Button.HeightProperty);
-        }
-    }
     
     private void InitializeDiscordRPC()
     {
