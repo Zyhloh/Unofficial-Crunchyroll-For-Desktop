@@ -1,0 +1,64 @@
+{
+  "name": "crunchyroll-for-desktop",
+  "version": "3.0.0",
+  "description": "Unofficial Crunchyroll Desktop App",
+  "author": "Zyhloh",
+  "license": "MIT",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "webpack --config webpack.config.js",
+    "dev": "concurrently \"webpack --config webpack.config.js --watch\" \"wait-on dist/renderer/index.html && electron .\"",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.zyhloh.crunchyroll-for-desktop",
+    "productName": "Crunchyroll For Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/main/**/*",
+      "dist/**/*",
+      "assets/**/*",
+      "config.json"
+    ],
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon-256.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "discord-rpc": "^4.0.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "@tailwindcss/postcss": "^4.2.1",
+    "autoprefixer": "^10.4.27",
+    "babel-loader": "^10.0.0",
+    "concurrently": "^9.2.1",
+    "css-loader": "^7.1.4",
+    "electron": "github:castlabs/electron-releases#v40.1.0+wvcus",
+    "electron-builder": "^26.8.1",
+    "html-webpack-plugin": "^5.6.6",
+    "mini-css-extract-plugin": "^2.10.0",
+    "postcss": "^8.5.8",
+    "postcss-loader": "^8.2.1",
+    "tailwindcss": "^4.2.1",
+    "wait-on": "^9.0.4",
+    "webpack": "^5.105.4",
+    "webpack-cli": "^6.0.1"
+  }
+}

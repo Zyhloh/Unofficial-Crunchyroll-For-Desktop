@@ -1,0 +1,24 @@
+{
+  "discord": {
+    "appId": "1412040406597636146",
+    "enabled": true
+  },
+  "hardwareAcceleration": true,
+  "window": {
+    "width": 1400,
+    "height": 900,
+    "minWidth": 800,
+    "minHeight": 600
+  },
+  "allowedDomains": [
+    "crunchyroll.com",
+    "www.crunchyroll.com",
+    "beta.crunchyroll.com",
+    "static.crunchyroll.com",
+    "store.crunchyroll.com",
+    "accounts.google.com",
+    "ssl.gstatic.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com"
+  ]
+}
