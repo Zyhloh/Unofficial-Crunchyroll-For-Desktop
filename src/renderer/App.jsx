@@ -39,23 +39,68 @@ function parsePageContext(url) {
     const path = pathname.toLowerCase();
 
     if (path.includes('/watch/')) {
-      const segments = path.split('/');
-      if (segments.length > 2) {
-        const title = segments[2]
-          .replace(/-/g, ' ')
-          .replace(/_/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase());
-        return { details: `Watching ${title}`, state: 'Enjoying anime content' };
-      }
-      return { details: 'Watching anime', state: 'Enjoying content' };
+      return { details: 'Watching something...', state: 'Loading...', needsScrape: true };
     }
-    if (path.includes('/series/')) return { details: 'Browsing anime series', state: 'Looking for something to watch' };
-    if (path.includes('/simulcasts')) return { details: 'Checking simulcasts', state: 'Finding new episodes' };
-    if (path.includes('/watchlist')) return { details: 'Managing watchlist', state: 'Organizing anime to watch' };
-    return { details: 'Browsing Crunchyroll', state: 'Exploring anime content' };
+    if (path.includes('/series/')) {
+      return { details: 'Browsing a series', state: 'Deciding what to watch...', needsScrape: true };
+    }
+    if (path.includes('/watchlist')) return { details: 'Checking their watchlist', state: 'So much to watch, so little time' };
+    if (path.includes('/discover')) return { details: 'Finding something new', state: 'Exploring new anime' };
+    if (path.includes('/simulcasts')) return { details: 'Checking simulcasts', state: 'Keeping up with the latest drops' };
+    if (path.includes('/history')) return { details: 'Looking at watch history', state: 'What did I watch again?' };
+    if (path.includes('/account')) return { details: 'Managing their account', state: 'Settings and stuff' };
+    if (path.includes('/search')) return { details: 'Searching for anime', state: 'Looking for something specific' };
+    if (path === '/' || path === '') return { details: 'Browsing Crunchyroll', state: 'On the home page' };
+    return { details: 'Browsing Crunchyroll', state: 'Exploring anime' };
   } catch {
     return { details: 'Using Crunchyroll', state: 'Watching anime' };
   }
+}
+
+const SCRAPE_WATCH_JS = `
+  (function() {
+    const ep = document.querySelector('h1.title');
+    const show = document.querySelector('h4.text--gq6o-');
+    return JSON.stringify({
+      episode: ep ? ep.textContent.trim() : null,
+      show: show ? show.textContent.trim() : null
+    });
+  })()
+`;
+
+const SCRAPE_SERIES_JS = `
+  (function() {
+    const title = document.querySelector('h1.title') || document.querySelector('h4.text--gq6o-');
+    return JSON.stringify({
+      show: title ? title.textContent.trim() : null
+    });
+  })()
+`;
+
+function updateDiscordRPC(webview, url) {
+  const ctx = parsePageContext(url);
+  window.electronAPI.discord.update(ctx.details, ctx.state);
+
+  if (!ctx.needsScrape) return;
+
+  const path = new URL(url).pathname.toLowerCase();
+  const isWatch = path.includes('/watch/');
+  const script = isWatch ? SCRAPE_WATCH_JS : SCRAPE_SERIES_JS;
+
+  setTimeout(() => {
+    try {
+      webview.executeJavaScript(script).then((result) => {
+        const data = JSON.parse(result);
+        if (isWatch && data.show) {
+          const details = `Watching ${data.show}`;
+          const state = data.episode || 'Enjoying the show';
+          window.electronAPI.discord.update(details, state);
+        } else if (!isWatch && data.show) {
+          window.electronAPI.discord.update(`Browsing ${data.show}`, 'Deciding what to watch...');
+        }
+      }).catch(() => {});
+    } catch {}
+  }, 2000);
 }
 
 export default function App() {
@@ -90,14 +135,12 @@ export default function App() {
     webview.addEventListener('did-navigate', (e) => {
       currentUrlRef.current = e.url;
       injectScrollbarCSS(webview);
-      const ctx = parsePageContext(e.url);
-      window.electronAPI.discord.update(ctx.details, ctx.state);
+      updateDiscordRPC(webview, e.url);
     });
 
     webview.addEventListener('did-navigate-in-page', (e) => {
       currentUrlRef.current = e.url;
-      const ctx = parsePageContext(e.url);
-      window.electronAPI.discord.update(ctx.details, ctx.state);
+      updateDiscordRPC(webview, e.url);
     });
 
     webview.addEventListener('new-window', (e) => {
