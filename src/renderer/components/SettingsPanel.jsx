@@ -274,7 +274,7 @@ export default function SettingsPanel({ open, onClose }) {
         <div style={styles.footer}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <span style={styles.footerDot} />
-            <span style={styles.footerText}>v3.0.0</span>
+            <span style={styles.footerText}>v3.0.1</span>
           </div>
           <span style={styles.footerText}>By Zyhloh</span>
         </div>

@@ -2,7 +2,7 @@
 
 A lightweight, native desktop client for Crunchyroll — built from the ground up with Electron.
 
-**v3.0.0** is a complete rewrite of the original C#/WebView2 app. Faster, cleaner, and actually good this time.
+**v3.0.1** is a complete rewrite of the original C#/WebView2 app. Faster, cleaner, and actually good this time.
 
 ---
 

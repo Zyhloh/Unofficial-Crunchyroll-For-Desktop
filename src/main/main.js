@@ -137,8 +137,18 @@ app.whenReady().then(async () => {
   createWindow();
 });
 
+let isQuitting = false;
+
+app.on('before-quit', async (event) => {
+  if (isQuitting) return;
+  event.preventDefault();
+  isQuitting = true;
+
+  await discord.shutdown();
+  app.quit();
+});
+
 app.on('window-all-closed', () => {
-  discord.destroy();
   app.quit();
 });
 

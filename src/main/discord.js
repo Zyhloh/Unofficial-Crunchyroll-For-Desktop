@@ -30,7 +30,7 @@ function updatePresence(details, state) {
       largeImageKey: 'crunchyroll_logo',
       largeImageText: 'Crunchyroll For Desktop',
       smallImageKey: 'smallcrunchyroll_logo',
-      smallImageText: 'v3.0.0 — by Zyhloh',
+      smallImageText: 'v3.0.1 — by Zyhloh',
       startTimestamp,
       buttons: [
         {
@@ -42,14 +42,20 @@ function updatePresence(details, state) {
   } catch {}
 }
 
-function destroy() {
-  if (client) {
-    try {
-      client.destroy();
-    } catch {}
-    client = null;
-    ready = false;
-  }
+async function shutdown() {
+  if (!client) return;
+
+  const current = client;
+  client = null;
+  ready = false;
+
+  try {
+    await current.clearActivity();
+  } catch {}
+
+  try {
+    await current.destroy();
+  } catch {}
 }
 
-module.exports = { init, updatePresence, destroy };
+module.exports = { init, updatePresence, shutdown };
