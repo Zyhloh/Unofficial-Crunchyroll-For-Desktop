@@ -7,7 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
     onStateChange: (callback) => {
-      ipcRenderer.on('window-state', (_, state) => callback(state));
+      const listener = (_, state) => callback(state);
+      ipcRenderer.on('window-state', listener);
+      return () => ipcRenderer.removeListener('window-state', listener);
     }
   },
   settings: {
@@ -18,10 +20,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   app: {
     restart: () => ipcRenderer.invoke('app:restart'),
-    getConfig: () => ipcRenderer.invoke('app:get-config')
+    getConfig: () => ipcRenderer.invoke('app:get-config'),
+    getStartUrl: () => ipcRenderer.invoke('app:get-start-url'),
+    setLastUrl: (url) => ipcRenderer.invoke('app:set-last-url', url)
   },
   discord: {
-    update: (details, state) => ipcRenderer.invoke('discord:update', details, state)
+    update: (activity) => ipcRenderer.invoke('discord:update', activity)
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:open-external', url)

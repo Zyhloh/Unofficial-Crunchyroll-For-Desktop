@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import iconUrl from '../../../assets/icon-128.png';
+
+const ANIMATION_MS = 200;
 
 const styles = {
-  overlay: (closing) => ({
+  overlay: (hidden) => ({
     position: 'absolute',
     inset: 0,
     zIndex: 20,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    transition: 'opacity 200ms',
-    opacity: closing ? 0 : 1
+    transition: `opacity ${ANIMATION_MS}ms`,
+    opacity: hidden ? 0 : 1
   }),
-  panel: (closing) => ({
+  panel: (hidden) => ({
     position: 'absolute',
     right: 0,
     top: 0,
@@ -21,8 +24,9 @@ const styles = {
     background: '#0a0a0a',
     borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
     boxShadow: '-8px 0 32px rgba(0,0,0,0.8)',
-    transition: 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-    transform: closing ? 'translateX(100%)' : 'translateX(0)',
+    transition: `transform ${ANIMATION_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+    transform: hidden ? 'translateX(100%)' : 'translateX(0)',
+    willChange: 'transform',
     fontFamily: "'Inter', sans-serif"
   }),
   header: {
@@ -42,6 +46,22 @@ const styles = {
     height: '100%',
     objectFit: 'contain'
   },
+  headerTitle: {
+    fontFamily: "'Montserrat', sans-serif",
+    fontSize: 18,
+    fontWeight: 700,
+    color: '#fff',
+    letterSpacing: '0.05em'
+  },
+  headerSubtitle: {
+    fontFamily: "'Montserrat', sans-serif",
+    fontSize: 10,
+    fontWeight: 600,
+    color: '#F47521',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    marginTop: 4
+  },
   closeBtn: {
     marginLeft: 'auto',
     width: 32,
@@ -56,6 +76,10 @@ const styles = {
     color: '#888',
     transition: 'all 0.2s ease'
   },
+  body: {
+    flex: 1,
+    overflowY: 'auto'
+  },
   section: {
     padding: '28px 28px 8px'
   },
@@ -68,13 +92,21 @@ const styles = {
     letterSpacing: '0.15em',
     marginBottom: 16
   },
-  card: {
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    width: '100%',
+    gap: 14,
+    padding: '16px 20px',
     background: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 12,
     border: '1px solid rgba(255, 255, 255, 0.05)',
-    padding: '20px',
-    marginBottom: 12,
-    transition: 'all 0.2s ease'
+    borderRadius: 12,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    textAlign: 'left',
+    color: '#aaa',
+    fontSize: 14,
+    fontWeight: 500
   },
   toggleTrack: (on) => ({
     position: 'relative',
@@ -99,22 +131,6 @@ const styles = {
     boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
     transition: 'left 200ms cubic-bezier(0.4, 0, 0.2, 1)'
   }),
-  linkBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    width: '100%',
-    gap: 14,
-    padding: '16px 20px',
-    background: 'rgba(255, 255, 255, 0.03)',
-    border: '1px solid rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    textAlign: 'left',
-    color: '#aaa',
-    fontSize: 14,
-    fontWeight: 500
-  },
   footer: {
     padding: '24px 28px',
     borderTop: '1px solid rgba(255, 255, 255, 0.05)',
@@ -142,6 +158,23 @@ const styles = {
   }
 };
 
+function hoverHandlers(enter, leave) {
+  return {
+    onMouseEnter: (e) => Object.assign(e.currentTarget.style, enter),
+    onMouseLeave: (e) => Object.assign(e.currentTarget.style, leave)
+  };
+}
+
+const iconHover = hoverHandlers(
+  { background: 'rgba(255, 255, 255, 0.08)', color: '#fff' },
+  { background: 'transparent', color: '#888' }
+);
+
+const rowHover = hoverHandlers(
+  { background: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(244, 117, 33, 0.3)' },
+  { background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.05)' }
+);
+
 function GpuIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -159,93 +192,118 @@ function GpuIcon() {
   );
 }
 
+function GitHubIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+    </svg>
+  );
+}
+
 function ChevronIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ opacity: 0.5 }}>
       <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
     </svg>
   );
 }
 
 export default function SettingsPanel({ open, onClose }) {
   const [hardwareAccel, setHardwareAccel] = useState(true);
-  const [visible, setVisible] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [opening, setOpening] = useState(true);
+  const [version, setVersion] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const [hidden, setHidden] = useState(true);
+  const closeTimerRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
-      setOpening(true);
-      setVisible(true);
-      setClosing(false);
-      window.electronAPI.settings.getHardwareAccel().then(setHardwareAccel);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setOpening(false);
-        });
-      });
-    }
+    if (!open) return undefined;
+
+    setMounted(true);
+    clearTimeout(closeTimerRef.current);
+
+    window.electronAPI.settings.getHardwareAccel().then(setHardwareAccel);
+    window.electronAPI.app.getConfig().then((cfg) => setVersion(cfg.version));
+
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setHidden(false));
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  function handleClose() {
-    setClosing(true);
-    setTimeout(() => {
-      setVisible(false);
-      setClosing(false);
-      onClose();
-    }, 200);
-  }
+  useEffect(() => {
+    if (open || !mounted) return undefined;
 
-  function handleToggle(enabled) {
+    setHidden(true);
+    closeTimerRef.current = setTimeout(() => setMounted(false), ANIMATION_MS);
+
+    return () => clearTimeout(closeTimerRef.current);
+  }, [open, mounted]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
+  const handleToggle = useCallback(async (enabled) => {
     setHardwareAccel(enabled);
-    window.electronAPI.settings.setHardwareAccel(enabled);
-    window.electronAPI.app.restart();
-  }
+    await window.electronAPI.settings.setHardwareAccel(enabled);
+    await window.electronAPI.app.restart();
+  }, []);
 
-  if (!visible) return null;
+  const openRepo = useCallback(() => {
+    window.electronAPI.shell.openExternal('https://github.com/zyhloh/unofficial-crunchyroll-for-desktop');
+  }, []);
+
+  if (!mounted) return null;
 
   return (
     <>
-      <div style={styles.overlay(closing || opening)} onClick={handleClose} />
+      <div style={styles.overlay(hidden)} onClick={onClose} />
 
-      <div style={styles.panel(closing || opening)}>
-
+      <div style={styles.panel(hidden)}>
         <div style={styles.header}>
           <div style={styles.headerIcon}>
-            <img src="../../assets/icon-128.png" alt="Crunchyroll" style={styles.headerIconImg} />
+            <img src={iconUrl} alt="" style={styles.headerIconImg} />
           </div>
           <div>
-            <div style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '0.05em' }}>Settings</div>
-            <div style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 10, fontWeight: 600, color: '#F47521', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 4 }}>Crunchyroll For Desktop</div>
+            <div style={styles.headerTitle}>Settings</div>
+            <div style={styles.headerSubtitle}>Crunchyroll For Desktop</div>
           </div>
-          <button
-            style={styles.closeBtn}
-            onClick={handleClose}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="6" y1="6" x2="18" y2="18" />
-              <line x1="18" y1="6" x2="6" y2="18" />
-            </svg>
+          <button style={styles.closeBtn} onClick={onClose} title="Close" {...iconHover}>
+            <CloseIcon />
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-
+        <div style={styles.body}>
           <div style={styles.section}>
             <div style={styles.sectionLabel}>Performance</div>
 
-            <div
-              style={styles.linkBtn}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.borderColor = 'rgba(244, 117, 33, 0.3)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)'; }}
-            >
+            <div style={styles.row} {...rowHover}>
               <div style={{ color: hardwareAccel ? '#F47521' : '#666', flexShrink: 0 }}>
                 <GpuIcon />
               </div>
               <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#fff' }}>Hardware Acceleration</span>
-              <button style={styles.toggleTrack(hardwareAccel)} onClick={() => handleToggle(!hardwareAccel)}>
+              <button
+                style={styles.toggleTrack(hardwareAccel)}
+                onClick={() => handleToggle(!hardwareAccel)}
+                title="Changing this restarts the app"
+              >
                 <div style={styles.toggleThumb(hardwareAccel)} />
               </button>
             </div>
@@ -254,19 +312,10 @@ export default function SettingsPanel({ open, onClose }) {
           <div style={styles.section}>
             <div style={styles.sectionLabel}>Links</div>
 
-            <button
-              style={styles.linkBtn}
-              onClick={() => window.electronAPI.shell.openExternal('https://github.com/zyhloh/unofficial-crunchyroll-for-desktop')}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'; e.currentTarget.style.color = '#fff'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.color = '#aaa'; }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-              </svg>
+            <button style={styles.row} onClick={openRepo} {...rowHover}>
+              <GitHubIcon />
               <span style={{ flex: 1 }}>GitHub Repository</span>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ opacity: 0.5 }}>
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
+              <ChevronIcon />
             </button>
           </div>
         </div>
@@ -274,11 +323,10 @@ export default function SettingsPanel({ open, onClose }) {
         <div style={styles.footer}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <span style={styles.footerDot} />
-            <span style={styles.footerText}>v3.0.1</span>
+            <span style={styles.footerText}>{version ? `v${version}` : ''}</span>
           </div>
           <span style={styles.footerText}>By Zyhloh</span>
         </div>
-
       </div>
     </>
   );

@@ -2,8 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 
+const WRITE_DELAY = 300;
+
 let settingsPath = null;
 let cache = null;
+let writeTimer = null;
 
 function getSettingsPath() {
   if (!settingsPath) {
@@ -16,12 +19,8 @@ function load() {
   if (cache) return cache;
 
   try {
-    const filePath = getSettingsPath();
-    if (fs.existsSync(filePath)) {
-      cache = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    } else {
-      cache = {};
-    }
+    const parsed = JSON.parse(fs.readFileSync(getSettingsPath(), 'utf-8'));
+    cache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     cache = {};
   }
@@ -29,15 +28,31 @@ function load() {
   return cache;
 }
 
-function save() {
+function writeNow() {
+  if (writeTimer) {
+    clearTimeout(writeTimer);
+    writeTimer = null;
+  }
+  if (!cache) return;
+
+  const filePath = getSettingsPath();
+  const tempPath = filePath + '.tmp';
+
   try {
-    const filePath = getSettingsPath();
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, JSON.stringify(cache, null, 2));
-  } catch {}
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(tempPath, JSON.stringify(cache, null, 2));
+    fs.renameSync(tempPath, filePath);
+  } catch {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {}
+  }
+}
+
+function scheduleWrite() {
+  if (writeTimer) clearTimeout(writeTimer);
+  writeTimer = setTimeout(writeNow, WRITE_DELAY);
+  writeTimer.unref?.();
 }
 
 function get(key, defaultValue) {
@@ -46,9 +61,10 @@ function get(key, defaultValue) {
 }
 
 function set(key, value) {
-  load();
-  cache[key] = value;
-  save();
+  const data = load();
+  if (data[key] === value) return;
+  data[key] = value;
+  scheduleWrite();
 }
 
-module.exports = { get, set };
+module.exports = { get, set, flush: writeNow };

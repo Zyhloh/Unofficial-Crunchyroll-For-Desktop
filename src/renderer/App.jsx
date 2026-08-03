@@ -1,6 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import TitleBar from './components/TitleBar';
 import SettingsPanel from './components/SettingsPanel';
+import { PAGE_SCRAPE_JS, contextFromUrl, activityFromPage } from './presence';
+
+const SCRAPE_DELAY = 2000;
+const WATCH_POLL_INTERVAL = 10000;
+const URL_SAVE_DELAY = 1500;
 
 const SCROLLBAR_CSS = `
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -10,170 +15,130 @@ const SCROLLBAR_CSS = `
   ::-webkit-scrollbar-corner { background: #141414; }
 `;
 
-const ALLOWED_DOMAINS = [
-  'crunchyroll.com',
-  'www.crunchyroll.com',
-  'beta.crunchyroll.com',
-  'static.crunchyroll.com',
-  'store.crunchyroll.com',
-  'accounts.google.com',
-  'ssl.gstatic.com',
-  'fonts.googleapis.com',
-  'fonts.gstatic.com'
-];
-
-function isDomainAllowed(url) {
-  try {
-    const { hostname } = new URL(url);
-    return ALLOWED_DOMAINS.some(
-      (d) => hostname === d || hostname.endsWith('.' + d)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function parsePageContext(url) {
-  try {
-    const { pathname } = new URL(url);
-    const path = pathname.toLowerCase();
-
-    if (path.includes('/watch/')) {
-      return { details: 'Watching something...', state: 'Loading...', needsScrape: true };
-    }
-    if (path.includes('/series/')) {
-      return { details: 'Browsing a series', state: 'Deciding what to watch...', needsScrape: true };
-    }
-    if (path.includes('/watchlist')) return { details: 'Checking their watchlist', state: 'So much to watch, so little time' };
-    if (path.includes('/discover')) return { details: 'Finding something new', state: 'Exploring new anime' };
-    if (path.includes('/simulcasts')) return { details: 'Checking simulcasts', state: 'Keeping up with the latest drops' };
-    if (path.includes('/history')) return { details: 'Looking at watch history', state: 'What did I watch again?' };
-    if (path.includes('/account')) return { details: 'Managing their account', state: 'Settings and stuff' };
-    if (path.includes('/search')) return { details: 'Searching for anime', state: 'Looking for something specific' };
-    if (path === '/' || path === '') return { details: 'Browsing Crunchyroll', state: 'On the home page' };
-    return { details: 'Browsing Crunchyroll', state: 'Exploring anime' };
-  } catch {
-    return { details: 'Using Crunchyroll', state: 'Watching anime' };
-  }
-}
-
-const SCRAPE_WATCH_JS = `
-  (function() {
-    const ep = document.querySelector('h1.title');
-    const show = document.querySelector('h4.text--gq6o-');
-    return JSON.stringify({
-      episode: ep ? ep.textContent.trim() : null,
-      show: show ? show.textContent.trim() : null
-    });
-  })()
-`;
-
-const SCRAPE_SERIES_JS = `
-  (function() {
-    const title = document.querySelector('h1.title') || document.querySelector('h4.text--gq6o-');
-    return JSON.stringify({
-      show: title ? title.textContent.trim() : null
-    });
-  })()
-`;
-
-function updateDiscordRPC(webview, url) {
-  const ctx = parsePageContext(url);
-  window.electronAPI.discord.update(ctx.details, ctx.state);
-
-  if (!ctx.needsScrape) return;
-
-  const path = new URL(url).pathname.toLowerCase();
-  const isWatch = path.includes('/watch/');
-  const script = isWatch ? SCRAPE_WATCH_JS : SCRAPE_SERIES_JS;
-
-  setTimeout(() => {
-    try {
-      webview.executeJavaScript(script).then((result) => {
-        const data = JSON.parse(result);
-        if (isWatch && data.show) {
-          const details = `Watching ${data.show}`;
-          const state = data.episode || 'Enjoying the show';
-          window.electronAPI.discord.update(details, state);
-        } else if (!isWatch && data.show) {
-          window.electronAPI.discord.update(`Browsing ${data.show}`, 'Deciding what to watch...');
-        }
-      }).catch(() => {});
-    } catch {}
-  }, 2000);
-}
-
 export default function App() {
   const [windowState, setWindowState] = useState('normal');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [webviewKey, setWebviewKey] = useState(0);
-  const [savedUrl, setSavedUrl] = useState('https://www.crunchyroll.com/');
+  const [loadError, setLoadError] = useState(null);
+  const [startUrl, setStartUrl] = useState(null);
+
   const webviewRef = useRef(null);
-  const currentUrlRef = useRef('https://www.crunchyroll.com/');
+  const scrapeTimerRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const urlTimerRef = useRef(null);
+  const trackedUrlRef = useRef(null);
 
-  useEffect(() => {
-    window.electronAPI.window.onStateChange(setWindowState);
-    window.electronAPI.window.isMaximized().then((maximized) => {
-      setWindowState(maximized ? 'maximized' : 'normal');
-    });
-  }, []);
-
-  function injectScrollbarCSS(webview) {
-    webview.insertCSS(SCROLLBAR_CSS);
-  }
-
-  const handleWebviewReady = useCallback(() => {
+  const scrapePresence = useCallback(async () => {
     const webview = webviewRef.current;
     if (!webview) return;
 
-    webview.addEventListener('dom-ready', () => {
+    try {
+      const raw = await webview.executeJavaScript(PAGE_SCRAPE_JS);
+      const activity = activityFromPage(JSON.parse(raw));
+      if (activity) window.electronAPI.discord.update(activity);
+    } catch {}
+  }, []);
+
+  const trackPage = useCallback(
+    (url) => {
+      if (url === trackedUrlRef.current) return;
+      trackedUrlRef.current = url;
+
+      clearTimeout(scrapeTimerRef.current);
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+
+      const { activity, track } = contextFromUrl(url);
+      window.electronAPI.discord.update(activity);
+      if (!track) return;
+
+      scrapeTimerRef.current = setTimeout(() => {
+        scrapePresence();
+        if (track === 'watch') {
+          pollTimerRef.current = setInterval(scrapePresence, WATCH_POLL_INTERVAL);
+        }
+      }, SCRAPE_DELAY);
+    },
+    [scrapePresence]
+  );
+
+  const rememberUrl = useCallback((url) => {
+    clearTimeout(urlTimerRef.current);
+    urlTimerRef.current = setTimeout(() => {
+      window.electronAPI.app.setLastUrl(url);
+    }, URL_SAVE_DELAY);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.window.onStateChange(setWindowState);
+
+    window.electronAPI.window.isMaximized().then((maximized) => {
+      setWindowState(maximized ? 'maximized' : 'normal');
+    });
+
+    window.electronAPI.app.getStartUrl().then(setStartUrl);
+
+    return () => {
+      unsubscribe?.();
+      clearTimeout(scrapeTimerRef.current);
+      clearTimeout(urlTimerRef.current);
+      clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return undefined;
+
+    const controller = new AbortController();
+    const on = (event, handler) =>
+      webview.addEventListener(event, handler, { signal: controller.signal });
+
+    on('dom-ready', () => {
       setLoading(false);
-      injectScrollbarCSS(webview);
+      setLoadError(null);
+      webview.insertCSS(SCROLLBAR_CSS).catch(() => {});
     });
 
-    webview.addEventListener('did-navigate', (e) => {
-      currentUrlRef.current = e.url;
-      injectScrollbarCSS(webview);
-      updateDiscordRPC(webview, e.url);
+    on('did-navigate', (e) => {
+      setLoadError(null);
+      trackPage(e.url);
+      rememberUrl(e.url);
     });
 
-    webview.addEventListener('did-navigate-in-page', (e) => {
-      currentUrlRef.current = e.url;
-      updateDiscordRPC(webview, e.url);
+    on('did-navigate-in-page', (e) => {
+      if (!e.isMainFrame) return;
+      trackPage(e.url);
+      rememberUrl(e.url);
     });
 
-    webview.addEventListener('new-window', (e) => {
-      e.preventDefault();
-      if (isDomainAllowed(e.url)) {
-        webview.loadURL(e.url);
-      }
+    on('media-started-playing', scrapePresence);
+    on('media-paused', scrapePresence);
+
+    on('did-fail-load', (e) => {
+      if (!e.isMainFrame || e.errorCode === -3) return;
+      setLoading(false);
+      setLoadError(e.errorDescription || 'Failed to load Crunchyroll');
     });
 
-    webview.addEventListener('will-navigate', (e) => {
-      if (!isDomainAllowed(e.url)) {
-        e.preventDefault();
-        webview.loadURL('https://www.crunchyroll.com/');
-      }
-    });
+    on('enter-html-full-screen', () => setWindowState('fullscreen'));
 
-    webview.addEventListener('enter-html-full-screen', () => {
-      setWindowState('fullscreen');
-    });
-
-    webview.addEventListener('leave-html-full-screen', () => {
+    on('leave-html-full-screen', () => {
       window.electronAPI.window.isMaximized().then((maximized) => {
         setWindowState(maximized ? 'maximized' : 'normal');
       });
     });
-  }, [webviewKey]);
 
-  useEffect(() => {
-    const webview = webviewRef.current;
-    if (webview) {
-      handleWebviewReady();
-    }
-  }, [handleWebviewReady]);
+    on('render-process-gone', () => setLoadError('The page crashed. Try reloading.'));
+
+    return () => controller.abort();
+  }, [startUrl, trackPage, rememberUrl, scrapePresence]);
+
+  const retry = useCallback(() => {
+    setLoadError(null);
+    setLoading(true);
+    webviewRef.current?.reload();
+  }, []);
 
   const isFullscreen = windowState === 'fullscreen';
 
@@ -182,12 +147,12 @@ export default function App() {
       {!isFullscreen && (
         <TitleBar
           windowState={windowState}
-          onSettingsToggle={() => setSettingsOpen(!settingsOpen)}
+          onSettingsToggle={() => setSettingsOpen((open) => !open)}
         />
       )}
 
       <div className="relative flex-1 overflow-hidden">
-        {loading && (
+        {loading && !loadError && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-cr-dark">
             <div className="flex flex-col items-center gap-4">
               <div className="w-12 h-12 border-3 border-cr-orange border-t-transparent rounded-full animate-spin" />
@@ -196,20 +161,33 @@ export default function App() {
           </div>
         )}
 
-        <webview
-          key={webviewKey}
-          ref={webviewRef}
-          src={savedUrl}
-          className="w-full h-full"
-          allowpopups="true"
-          partition="persist:crunchyroll"
-          plugins="true"
-        />
+        {loadError && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-cr-dark">
+            <div className="flex flex-col items-center gap-4 px-8 text-center">
+              <span className="text-cr-text text-base font-semibold">Something went wrong</span>
+              <span className="text-cr-muted text-sm max-w-sm">{loadError}</span>
+              <button
+                onClick={retry}
+                className="mt-2 px-5 py-2 rounded-lg bg-cr-orange text-white text-sm font-semibold cursor-pointer"
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        )}
 
-        <SettingsPanel
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-        />
+        {startUrl && (
+          <webview
+            ref={webviewRef}
+            src={startUrl}
+            className="w-full h-full"
+            allowpopups="true"
+            partition="persist:crunchyroll"
+            plugins="true"
+          />
+        )}
+
+        <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
     </div>
   );

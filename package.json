@@ -1,6 +1,6 @@
 {
   "name": "crunchyroll-for-desktop",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Unofficial Crunchyroll Desktop App",
   "author": "Zyhloh",
   "license": "MIT",
@@ -37,9 +37,7 @@
     }
   },
   "dependencies": {
-    "discord-rpc": "^4.0.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "discord-rpc": "^4.0.1"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
@@ -56,9 +54,14 @@
     "mini-css-extract-plugin": "^2.10.0",
     "postcss": "^8.5.8",
     "postcss-loader": "^8.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "tailwindcss": "^4.2.1",
     "wait-on": "^9.0.4",
     "webpack": "^5.105.4",
     "webpack-cli": "^6.0.1"
+  },
+  "allowScripts": {
+    "github:castlabs/electron-releases#df5ab90dfbe29baf286913cd0c3488c2c133b8e7": true
   }
 }

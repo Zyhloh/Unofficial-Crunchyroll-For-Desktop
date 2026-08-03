@@ -4,11 +4,17 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = {
   mode: 'production',
+  devtool: false,
   entry: './src/renderer/index.jsx',
   output: {
     path: path.resolve(__dirname, 'dist/renderer'),
     filename: 'bundle.js',
+    assetModuleFilename: 'assets/[name][ext]',
     clean: true
+  },
+  cache: {
+    type: 'filesystem',
+    cacheDirectory: path.resolve(__dirname, 'node_modules/.cache/webpack')
   },
   resolve: {
     extensions: ['.js', '.jsx']
@@ -21,7 +27,11 @@ module.exports = {
         use: {
           loader: 'babel-loader',
           options: {
-            presets: ['@babel/preset-env', '@babel/preset-react']
+            cacheDirectory: true,
+            presets: [
+              ['@babel/preset-env', { targets: { electron: '40' }, bugfixes: true }],
+              ['@babel/preset-react', { runtime: 'automatic' }]
+            ]
           }
         }
       },
@@ -38,11 +48,18 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: './src/renderer/index.html',
-      filename: 'index.html'
+      filename: 'index.html',
+      minify: {
+        collapseWhitespace: true,
+        removeComments: true
+      }
     }),
     new MiniCssExtractPlugin({
       filename: 'styles.css'
     })
   ],
+  performance: {
+    hints: false
+  },
   target: 'web'
 };
